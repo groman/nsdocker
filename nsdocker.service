@@ -1,0 +1,44 @@
+[Unit]
+Description=Containerized Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network.target nsdocker.socket
+Requires=nsdocker.socket
+
+[Service]
+Type=notify
+# the default is not to use systemd for cgroups because the delegate issues still
+# exists and systemd currently does not support the cgroup feature set required
+# for containers run by docker
+EnvironmentFile=-/etc/default/docker
+ExecStartPre=/sbin/ip link add dk0 type veth peer name dk0p
+ExecStartPre=/sbin/ip addr add 10.16.0.1/12 broadcast 10.31.255.255 dev dk0
+ExecStartPre=/sbin/ip link set dk0 up
+ExecStartPre=/sbin/iptables -t nat -A POSTROUTING -s 10.16.0.1/12 -o eth0 -j MASQUERADE
+ExecStartPre=/sbin/iptables -A FORWARD -i eth0 -o dk0 -j ACCEPT
+ExecStartPre=/sbin/iptables -A FORWARD -o eth0 -i dk0 -j ACCEPT
+
+ExecStart=/usr/bin/unshare --mount --net /usr/bin/dockerd -H fd:// --bip=10.17.0.1/16 --ip=10.16.0.2 $DOCKER_OPTS
+
+ExecStartPost=/sbin/ip link set dk0p netns $MAINPID
+ExecStartPost=/usr/bin/nsenter --net -t $MAINPID /sbin/ip link set lo up
+ExecStartPost=/usr/bin/nsenter --net -t $MAINPID /sbin/ip addr add 10.16.0.2/12 broadcast 10.31.255.255 dev dk0p
+ExecStartPost=/usr/bin/nsenter --net -t $MAINPID /sbin/ip link set dk0p up
+ExecStartPost=/usr/bin/nsenter --net -t $MAINPID /sbin/ip route add default via 10.16.0.1
+ExecStopPost=/sbin/ip link delete dk0
+ExecReload=/bin/kill -s HUP $MAINPID
+# Having non-zero Limit*s causes performance problems due to accounting overhead
+# in the kernel. We recommend using cgroups to do container-local accounting.
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+# Uncomment TasksMax if your systemd version supports it.
+# Only systemd 226 and above support this version.
+TasksMax=infinity
+TimeoutStartSec=0
+# set delegate yes so that systemd does not reset the cgroups of docker containers
+Delegate=yes
+# kill only the docker process, not all processes in the cgroup
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
