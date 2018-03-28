@@ -1,8 +1,8 @@
 [Unit]
 Description=Containerized Docker Application Container Engine
 Documentation=https://docs.docker.com
-After=network.target nsdocker.socket
-Requires=nsdocker.socket
+After=network.target nsdocker.socket local-fs.target
+Requires=nsdocker.socket local-fs.target
 
 [Service]
 Type=notify
